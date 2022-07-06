@@ -1,26 +1,12 @@
 package cmd
 
 import (
-	"encoding/csv"
 	"fmt"
-	"github.com/lfordyce/tiger/internal/domain"
 	"github.com/spf13/cobra"
 	"io"
 	"os"
-	"sync"
+	"syscall"
 )
-
-func openStdinOrFile() io.Reader {
-	var err error
-	r := os.Stdin
-	if len(os.Args) > 1 {
-		r, err = os.Open(os.Args[1])
-		if err != nil {
-			panic(err)
-		}
-	}
-	return r
-}
 
 func exactArgsWithMsg(n int, msg string) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
@@ -31,42 +17,45 @@ func exactArgsWithMsg(n int, msg string) cobra.PositionalArgs {
 	}
 }
 
-type Requestor interface {
-	C() <-chan domain.Request
-}
-
-type RequestorFunc func() <-chan domain.Request
-
-func (rf RequestorFunc) C() <-chan domain.Request {
-	return rf()
-}
-
-func FileProcessor(rc io.Reader, wg *sync.WaitGroup) (Requestor, error) {
-	ch := make(chan domain.Request, 32)
-	go func() {
-		r := csv.NewReader(rc)
-		if _, err := r.Read(); err != nil { //read header
-			fmt.Fprintf(os.Stderr, "failed to parse csv header: %v\n", err)
+func stdinOrFile(args string, stdin io.ReadCloser) io.ReadCloser {
+	var err error
+	r := stdin
+	if args != "-" {
+		r, err = os.Open(args)
+		if err != nil {
+			panic(err)
 		}
-		defer close(ch)
-		for {
-			rec, err := r.Read()
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				fmt.Fprintf(os.Stderr, "failed to parse csv data: %v\n", err)
+	}
+	return r
+}
+
+// Trap Interrupts, SIGINTs and SIGTERMs and call the given.
+func handleTestAbortSignals(gs *globalState, gracefulStopHandler, onHardStop func(os.Signal)) (stop func()) {
+	sigC := make(chan os.Signal, 2)
+	done := make(chan struct{})
+	gs.signalNotify(sigC, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		select {
+		case sig := <-sigC:
+			gracefulStopHandler(sig)
+		case <-done:
+			return
+		}
+
+		select {
+		case sig := <-sigC:
+			if onHardStop != nil {
+				onHardStop(sig)
 			}
-			wg.Add(1)
-			ch <- domain.Request{
-				HostID:    rec[0],
-				StartTime: rec[1],
-				EndTime:   rec[2],
-			}
+			gs.osExit(int(105))
+		case <-done:
+			return
 		}
 	}()
 
-	return RequestorFunc(func() <-chan domain.Request {
-		return ch
-	}), nil
+	return func() {
+		close(done)
+		gs.signalStop(sigC)
+	}
 }

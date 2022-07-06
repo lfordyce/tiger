@@ -6,7 +6,7 @@ require (
 	github.com/jackc/pgx/v4 v4.16.1
 	github.com/mattn/go-colorable v0.1.12
 	github.com/mattn/go-isatty v0.0.14
-	github.com/rs/zerolog v1.27.0
+	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/pflag v1.0.5
 )

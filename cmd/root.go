@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"github.com/lfordyce/tiger/internal/domain"
-	"github.com/lfordyce/tiger/pkg/log"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"io"
+	"io/ioutil"
+	stdlog "log"
 	"os"
 	"os/signal"
 	"strconv"
@@ -19,7 +21,6 @@ import (
 
 // globalFlags contains global config values that apply sub-commands.
 type globalFlags struct {
-	quiet     bool
 	noColor   bool
 	logOutput string
 	logFormat string
@@ -35,11 +36,14 @@ type globalState struct {
 
 	outMutex       *sync.Mutex
 	stdOut, stdErr *consoleWriter
-	stdIn          io.Reader
+	stdIn          io.ReadCloser
 
 	osExit       func(int)
 	signalNotify func(chan<- os.Signal, ...os.Signal)
 	signalStop   func(chan<- os.Signal)
+
+	logger         *logrus.Logger
+	fallbackLogger logrus.FieldLogger
 }
 
 func newGlobalState(ctx context.Context) *globalState {
@@ -50,11 +54,21 @@ func newGlobalState(ctx context.Context) *globalState {
 	stdOut := &consoleWriter{os.Stdout, colorable.NewColorable(os.Stdout), stdoutTTY, outMutex, nil}
 	stdErr := &consoleWriter{os.Stderr, colorable.NewColorable(os.Stderr), stderrTTY, outMutex, nil}
 
+	logger := &logrus.Logger{
+		Out: stdOut,
+		Formatter: &logrus.TextFormatter{
+			ForceColors:   stdoutTTY,
+			DisableColors: stdoutTTY,
+		},
+		Hooks: make(logrus.LevelHooks),
+		Level: logrus.InfoLevel,
+	}
+
 	defaultFlags := getDefaultFlags()
 
 	return &globalState{
 		ctx:          ctx,
-		args:         append(make([]string, 0, len(os.Args)), os.Args...), // copy
+		args:         append(make([]string, 0, len(os.Args)), os.Args...),
 		defaultFlags: defaultFlags,
 		flags:        defaultFlags,
 		outMutex:     outMutex,
@@ -64,6 +78,13 @@ func newGlobalState(ctx context.Context) *globalState {
 		osExit:       os.Exit,
 		signalNotify: signal.Notify,
 		signalStop:   signal.Stop,
+		logger:       logger,
+		fallbackLogger: &logrus.Logger{
+			Out:       stdErr,
+			Formatter: new(logrus.TextFormatter),
+			Hooks:     make(logrus.LevelHooks),
+			Level:     logrus.InfoLevel,
+		},
 	}
 }
 
@@ -75,9 +96,9 @@ func getDefaultFlags() globalFlags {
 
 // This is to keep all fields needed for the main/root command
 type rootCommand struct {
-	globalState *globalState
-
-	cmd *cobra.Command
+	globalState   *globalState
+	cmd           *cobra.Command
+	loggerStopped <-chan struct{}
 }
 
 func newRootCommand(gs *globalState) *rootCommand {
@@ -86,10 +107,11 @@ func newRootCommand(gs *globalState) *rootCommand {
 	}
 	// the base command when called without any subcommands.
 	rootCmd := &cobra.Command{
-		Use:           "tiger",
-		Short:         "benchmark sql query performance",
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:               "tiger",
+		Short:             "benchmark sql query performance",
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		PersistentPreRunE: c.persistentPreRunE,
 	}
 
 	rootCmd.PersistentFlags().AddFlagSet(rootCmdPersistentFlagSet(gs))
@@ -110,6 +132,20 @@ func newRootCommand(gs *globalState) *rootCommand {
 	return c
 }
 
+func (c *rootCommand) persistentPreRunE(*cobra.Command, []string) error {
+	var err error
+
+	c.loggerStopped, err = c.setupLoggers()
+	if err != nil {
+		return err
+	}
+	<-c.loggerStopped
+
+	stdlog.SetOutput(c.globalState.logger.Writer())
+	c.globalState.logger.Debugf("tiger version: v%s", "0.1.0")
+	return nil
+}
+
 func (c *rootCommand) execute() {
 	ctx, cancel := context.WithCancel(c.globalState.ctx)
 	defer cancel()
@@ -121,8 +157,8 @@ func (c *rootCommand) execute() {
 		return
 	}
 
+	c.globalState.logger.Error(err)
 	exitCode := 1
-	fmt.Fprintf(os.Stderr, "failed to process cmd: %v\n", err)
 	c.globalState.osExit(exitCode)
 }
 
@@ -143,25 +179,77 @@ func rootCmdPersistentFlagSet(gs *globalState) *pflag.FlagSet {
 
 	flags.BoolVar(&gs.flags.noColor, "no-color", gs.flags.noColor, "disable colored output")
 	flags.Lookup("no-color").DefValue = strconv.FormatBool(gs.defaultFlags.noColor)
+
+	flags.BoolVarP(&gs.flags.verbose, "verbose", "v", gs.defaultFlags.verbose, "enable verbose logging")
 	return flags
 }
 
-type Logger struct {
-	log.Logger
+// RawFormatter it does nothing with the message just prints it
+type RawFormatter struct{}
+
+// Format renders a single log entry
+func (f RawFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+	return append([]byte(entry.Message), '\n'), nil
 }
 
-func (l Logger) DurationHandler(next domain.Handler, id int) domain.Handler {
+// The returned channel will be closed when the logger has finished flushing and pushing logs after
+// the provided context is closed. It is closed if the logger isn't buffering and sending messages
+// Asynchronously
+func (c *rootCommand) setupLoggers() (<-chan struct{}, error) {
+	ch := make(chan struct{})
+	close(ch)
+
+	if c.globalState.flags.verbose {
+		c.globalState.logger.SetLevel(logrus.DebugLevel)
+	}
+
+	loggerForceColors := false // disable color by default
+	switch line := c.globalState.flags.logOutput; {
+	case line == "stderr":
+		loggerForceColors = !c.globalState.flags.noColor && c.globalState.stdErr.isTTY
+		c.globalState.logger.SetOutput(c.globalState.stdErr)
+	case line == "stdout":
+		loggerForceColors = !c.globalState.flags.noColor && c.globalState.stdOut.isTTY
+		c.globalState.logger.SetOutput(c.globalState.stdOut)
+	case line == "none":
+		c.globalState.logger.SetOutput(ioutil.Discard)
+	default:
+		return nil, fmt.Errorf("unsupported log output '%s'", line)
+	}
+
+	switch c.globalState.flags.logFormat {
+	case "raw":
+		c.globalState.logger.SetFormatter(&RawFormatter{})
+		c.globalState.logger.Debug("Logger format: RAW")
+	case "json":
+		c.globalState.logger.SetFormatter(&logrus.JSONFormatter{})
+		c.globalState.logger.Debug("Logger format: JSON")
+	default:
+		c.globalState.logger.SetFormatter(&logrus.TextFormatter{
+			ForceColors: loggerForceColors, DisableColors: c.globalState.flags.noColor,
+		})
+		c.globalState.logger.Debug("Logger format: TEXT")
+	}
+	return ch, nil
+}
+
+func LogDurationHandler(next domain.Handler, id int, logger *logrus.Logger) domain.Handler {
 	return domain.HandlerFunc(func(r domain.Request) (result float64, err error) {
 		defer func(start time.Time) {
 			dur := time.Since(start)
-			l.Info().
-				Int("worker_id", id).
-				Dur("dur_ms", dur).
-				Float64("query_dur_ms", result).
-				Str("host_id", r.HostID).
-				Str("start_time", r.StartTime).
-				Str("end_time", r.EndTime).
-				Err(err).Msg("")
+			e := logger.WithFields(logrus.Fields{
+				"worker_id":    id,
+				"dur_ms":       dur,
+				"query_dur_ms": result,
+				"host_id":      r.HostID,
+				"start_time":   r.StartTime,
+				"end_time":     r.EndTime,
+			})
+			if err != nil {
+				e.WithError(err).Error()
+			} else {
+				e.Info("processing statistics")
+			}
 		}(time.Now())
 		result, err = next.Process(r)
 		return
