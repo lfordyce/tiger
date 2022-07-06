@@ -5,7 +5,8 @@ import (
 )
 
 var (
-	ErrNoExecute = errors.New("no execute function specified")
+	ErrNoExecute     = errors.New("no execute function specified")
+	_            Job = &funcJob{}
 )
 
 // Job interface defines the methods for running executing a job

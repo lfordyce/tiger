@@ -1,5 +1,7 @@
 package queue
 
+var _ Dispatcher = &dispatcher{}
+
 type Dispatcher interface {
 	Run()
 	Queue(Job)
