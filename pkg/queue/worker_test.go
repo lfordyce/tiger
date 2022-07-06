@@ -3,18 +3,8 @@ package queue
 import "testing"
 import "errors"
 
-type lifecycleJob struct{}
-
-func (lf *lifecycleJob) Execute() error {
-	return nil
-}
-
-func (lf *lifecycleJob) ShouldRetry(err error) bool {
-	return false
-}
-
 func TestQuitNoJobs(t *testing.T) {
-	q := NewDispatcher("dispatcher", 1)
+	q := NewDispatcher(1)
 	go q.Run()
 
 	q.Stop()
@@ -22,7 +12,7 @@ func TestQuitNoJobs(t *testing.T) {
 
 func TestErrorRetry(t *testing.T) {
 
-	q := NewDispatcher("dispatcher", 1)
+	q := NewDispatcher(1)
 	go q.Run()
 
 	attempts := 0
@@ -59,7 +49,7 @@ func TestErrorRetry(t *testing.T) {
 }
 
 func TestNoJobExecuteFunc(t *testing.T) {
-	q := NewDispatcher("dispatcher", 1)
+	q := NewDispatcher(1)
 	go q.Run()
 
 	quit := make(chan error)
@@ -80,7 +70,7 @@ func TestNoJobExecuteFunc(t *testing.T) {
 }
 
 func TestNoJobRetryFunc(t *testing.T) {
-	q := NewDispatcher("dispatcher", 1)
+	q := NewDispatcher(1)
 	go q.Run()
 
 	eee := errors.New("expected error")

@@ -9,7 +9,6 @@ type Dispatcher interface {
 }
 
 type dispatcher struct {
-	name       string
 	jobQueue   chan Job
 	workers    []*worker
 	workerPool chan chan Job
@@ -17,9 +16,8 @@ type dispatcher struct {
 	quit chan bool
 }
 
-func NewDispatcher(name string, workers int) *dispatcher {
+func NewDispatcher(workers int) *dispatcher {
 	d := &dispatcher{
-		name:       name,
 		jobQueue:   make(chan Job),
 		workers:    make([]*worker, workers),
 		workerPool: make(chan chan Job, workers),

@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/lfordyce/tiger/internal/domain"
+	"github.com/lfordyce/tiger/pkg/csv"
 	"github.com/lfordyce/tiger/pkg/log"
 	"github.com/lfordyce/tiger/pkg/queue"
 	"github.com/spf13/cobra"
@@ -45,6 +46,7 @@ type cmdRun struct {
 }
 
 func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
+	var err error
 	fmt.Println("in run command...")
 	if len(args) < 1 {
 		return fmt.Errorf("tiger needs at least one argument to load the test")
@@ -53,77 +55,57 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 	globalWaitGroup := new(sync.WaitGroup)
 	l := Logger{Logger: log.NewLogger()}
 	l.Info().Str("TEST", "testing testing")
-	ctx := context.Background()
-	conn, err := pgxpool.Connect(ctx, defaultPostgresURL)
+
+	conn, err := pgxpool.Connect(context.Background(), defaultPostgresURL)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
 		return err
 	}
-	defer conn.Close()
-
-	repo := Repository{
-		Conn: conn,
-	}
-
-	lookup := domain.ShardHandlerFunc(func(request domain.Request, u int) error {
-		if _, err := l.DurationHandler(repo, u).Process(request); err != nil {
-			return err
-		}
-		return nil
-	})
-
-	qd := queue.NewDispatcher("lookup", 10)
+	qd := queue.NewDispatcher(10)
 	go qd.Run()
+
+	defer func() {
+		conn.Close()
+		qd.Stop()
+	}()
+
+	repo := Repository{Conn: conn}
 
 	jq := &domain.QueueHandler{
 		QueueJobHandler: domain.QueueJobHandlerFunc(func(job *domain.QueueJob) {
 			qd.Queue(job)
 		}),
 		ShardHandler: domain.ShardHandlerFunc(func(request domain.Request, u int) error {
-			defer func() {
-				globalWaitGroup.Done()
-			}()
-			return lookup.Process(request, u)
+			defer globalWaitGroup.Done()
+			if _, err := l.DurationHandler(repo, u).Process(request); err != nil {
+				return err
+			}
+			return nil
 		}),
 	}
 
 	csvfile, err := os.Open("/Users/lfordyce/Workspace/Go/tiger/query_params.csv")
 	if err != nil {
 		l.LogError("csv file open", err)
-	}
-
-	f, err := FileProcessor(csvfile, globalWaitGroup)
-	if err != nil {
-		if _, err := fmt.Fprintf(os.Stderr, "failed to process csv file: %v\n", err); err != nil {
-			panic(err)
-		}
 		return err
 	}
 
-	//for {
-	//	select {
-	//	case proc, ok := <-f.C():
-	//		if !ok {
-	//			l.Info().Str("csv_processing", "finished")
-	//			break
-	//		}
-	//		if err := jq.Process(proc, 0); err != nil {
-	//			l.LogError("final reader", err)
-	//		}
-	//	case <-ctx.Done():
-	//		panic(ctx.Err())
-	//	}
-	//}
-	for proc := range f.C() {
-		if err := jq.Process(proc, 0); err != nil {
-			l.LogError("final reader", err)
-		}
+	q := &QueryFormatProcess{
+		Hostname:  "hostname",
+		StartTime: "start_time",
+		EndTime:   "end_time",
 	}
+
+	errCh := make(chan error, 1)
+	q.Run(csv.WithIoReader(csvfile), jq, globalWaitGroup, errCh)
+	err = <-errCh
+	if err != nil {
+		return err
+	}
+
 	fmt.Println("finished processing csv queries...")
 	globalWaitGroup.Wait()
 	fmt.Println("WAITING DONE...")
-	//<-ctx.Done()
-
 	return nil
 }
 
@@ -149,4 +131,29 @@ func getCmdRun(gs *globalState) *cobra.Command {
 	runCmd.Flags().SortFlags = false
 	runCmd.Flags().AddFlagSet(c.flagSet())
 	return runCmd
+}
+
+type QueryFormatProcess struct {
+	Hostname  string
+	StartTime string
+	EndTime   string
+}
+
+func (q *QueryFormatProcess) Run(reader csv.Reader, handler domain.ShardHandler, wg *sync.WaitGroup, errCh chan<- error) {
+	errCh <- func() error {
+		defer reader.Close()
+
+		for data := range reader.C() {
+			wg.Add(1)
+			r := domain.Request{
+				HostID:    data.Get(q.Hostname),
+				StartTime: data.Get(q.StartTime),
+				EndTime:   data.Get(q.EndTime),
+			}
+			if err := handler.Process(r, 0); err != nil {
+				return err
+			}
+		}
+		return reader.Error()
+	}()
 }

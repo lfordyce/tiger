@@ -19,7 +19,7 @@ type delayJob struct {
 	post     func(runs int)
 }
 
-func (dj *delayJob) Execute(id int) error {
+func (dj *delayJob) Execute(int) error {
 	dj.mu.Lock()
 	dj.counter++
 	run := dj.counter
@@ -31,11 +31,11 @@ func (dj *delayJob) Execute(id int) error {
 	return nil
 }
 
-func (dj *delayJob) ShouldRetry(err error) bool {
+func (dj *delayJob) ShouldRetry(error) bool {
 	return false
 }
 
-func (dj *delayJob) Fail(err error) {
+func (dj *delayJob) Fail(error) {
 }
 
 func newDelayJob(runs int, quit chan bool) *delayJob {
@@ -64,7 +64,7 @@ func expectDuration(t0 time.Time, durMin, durMax time.Duration, t *testing.T) {
 func runWorkerJobs(workers int, jobs int) time.Time {
 	quit := make(chan bool)
 
-	q := NewDispatcher("dispatcher", workers)
+	q := NewDispatcher(workers)
 	go q.Run()
 
 	t0 := time.Now()
