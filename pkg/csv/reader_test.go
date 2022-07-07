@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 )
 
 type parsedData struct {
@@ -38,6 +39,14 @@ host_000008,2017-01-02 18:50:28,2017-01-02 19:50:28
 	reader := WithIoReader(os.Stdin)
 	fmt.Println(reader.Header())
 	for data := range reader.C() {
+
+		ts := data.Get("start_time")
+		start, err := time.Parse("2006-01-02 15:04:05", ts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Printf("START: %+v\n", start)
+
 		p := parsedData{
 			hostname:  data.Get("hostname"),
 			startTime: data.Get("start_time"),
@@ -45,8 +54,4 @@ host_000008,2017-01-02 18:50:28,2017-01-02 19:50:28
 		}
 		fmt.Printf("%+v\n", p)
 	}
-}
-
-func TestReadAll(t *testing.T) {
-
 }

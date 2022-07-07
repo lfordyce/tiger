@@ -233,7 +233,7 @@ func (c *rootCommand) setupLoggers() (<-chan struct{}, error) {
 	return ch, nil
 }
 
-func LogDurationHandler(next domain.Handler, id int, logger *logrus.Logger) domain.Handler {
+func LogDurationHandler(next domain.Handler, id int, logger *logrus.Logger, write StreamWrite) domain.Handler {
 	return domain.HandlerFunc(func(r domain.Request) (result float64, err error) {
 		defer func(start time.Time) {
 			dur := time.Since(start)
@@ -248,7 +248,15 @@ func LogDurationHandler(next domain.Handler, id int, logger *logrus.Logger) doma
 			if err != nil {
 				e.WithError(err).Error()
 			} else {
-				e.Info("processing statistics")
+				e.Debug("processing statistics")
+				write <- ResultStats{
+					worker:     id,
+					elapsed:    result,
+					overhead:   dur,
+					hostnameID: r.HostID,
+					startEnd:   r.StartTime,
+					endTime:    r.EndTime,
+				}
 			}
 		}(time.Now())
 		result, err = next.Process(r)
