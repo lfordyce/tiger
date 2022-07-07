@@ -5,15 +5,13 @@ run:
     - resources
 
 linters-settings:
-  exhaustive:
-    default-signifies-exhaustive: true
   dupl:
     threshold: 100
   gci:
     sections: [prefix(github.com/lfordyce/tiger)]
   goconst:
-    min-len: 10
-    min-occurrences: 4
+    min-len: 2
+    min-occurrences: 2
   gocognit:
     min-complexity: 20
   gocritic:
@@ -28,7 +26,9 @@ linters-settings:
   gocyclo:
     min-complexity: 15
   goimports:
-    local-prefixes: github.com/lfordyce/tiger
+    local-prefixes: github.com/get-eventually/go-eventually
+  golint:
+    min-confidence: 0
   govet:
     check-shadowing: true
   lll:
@@ -46,27 +46,54 @@ linters-settings:
     range-loops: false
 
 linters:
-  enable-all: true
-  disable:
-    - nlreturn
+  disable-all: true
+  enable:
+    - deadcode
+    - dogsled
+    - dupl
+    - errcheck
+    - exhaustive
+    - funlen
     - gci
     - gochecknoinits
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
     - godot
-    - godox
-    - gomodguard
+    - gofumpt
+    - goimports
+    - goprintffuncname
+    - gosec
+    - gosimple
+    - ifshort
+    - ineffassign
+    - lll
+    - makezero
+    - misspell
+    - nakedret
+    - nestif
+    - nolintlint
+    - prealloc
+    - revive
+    # These two linters are useful for the Postgres implementation.
+    - staticcheck
+    - stylecheck
     - testpackage
+    - typecheck
+    - unconvert
+    - unused
+    - varcheck
+    - whitespace
     - wsl
-    - gomnd
-    - goerr113 # most of the errors here are meant for humans
-    - goheader
-    - exhaustivestruct
-    - thelper
-    - gocyclo # replaced by cyclop since it also calculates the package complexity
-    - maligned # replaced by govet 'fieldalignment'
-    - interfacer # deprecated
-    - scopelint # deprecated, replaced by exportloopref
-    - golint # this linter is deprecated
-    - ireturn
-    - tagliatelle
-    - promlinter
-  fast: false
+    # These linters are disabled due to Go 1.18 issues with go/ssa package.
+    # More context here: https://github.com/golangci/golangci-lint/issues/2649
+    #
+    # - bodyclose
+    # - govet
+    # - nilerr
+    # - rowserrcheck
+    # - sqlclosecheck
+    # - structcheck
+    # - unparam
+    # - wastedassign

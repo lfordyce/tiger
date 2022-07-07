@@ -38,10 +38,17 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
 	pgconn, err := postgres.GetConfig(cmd.Flags())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse postgres config cli flags: %w", err)
 	}
+
+	fmtProcess, err := domain.GetCsvConfig(cmd.Flags())
+	if err != nil {
+		return fmt.Errorf("failed to parse csv config cli flags: %w", err)
+	}
+
 	globalCtx, globalCancel := context.WithCancel(c.gs.ctx)
 	defer globalCancel()
 
@@ -71,7 +78,7 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 			processes.Add(1)
 			qd.Queue(job)
 		}),
-		ShardHandler: domain.ShardHandlerFunc(func(request domain.Request, u int) error {
+		TaskHandler: domain.TaskHandlerFunc(func(request domain.Request, u int) error {
 			// decrements the WaitGroup when job is finished executing
 			defer processes.Done()
 			if _, err := LogDurationHandler(repo, u, c.gs.logger, resultCh).Process(request); err != nil {
@@ -81,13 +88,6 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 		}),
 	}
 
-	q := &QueryFormatProcess{
-		Hostname:  "hostname",
-		StartTime: "start_time",
-		EndTime:   "end_time",
-		Format:    "2006-01-02 15:04:05",
-	}
-
 	elapsed := func() func() time.Duration {
 		start := time.Now()
 		return func() time.Duration {
@@ -95,7 +95,7 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	q.Run(csv.WithIoReader(file), jq, errCh)
+	fmtProcess.Run(csv.WithIoReader(file), jq, errCh)
 	err = <-errCh
 	if err != nil {
 		return err
@@ -111,11 +111,12 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 		local.Done()
 	}()
 	processes.Wait()
-	close(resultCh)
-	local.Wait()
+	// signals that all events have been executed by the worker pool
 	finished := elapsed()
 
-	//fmt.Printf("%+v\n", events)
+	close(resultCh)
+	local.Wait()
+
 	c.gs.logger.WithField("total", len(events)).Info("total results collected")
 	c.gs.logger.WithField("elapsed", finished).Info("execution time of all jobs")
 	return nil
@@ -124,12 +125,16 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 func (c *cmdRun) flagSet() *pflag.FlagSet {
 	flags := pflag.NewFlagSet("", pflag.ContinueOnError)
 	flags.SortFlags = false
-	flags.IntP("workers", "w", 3, "number of workers for concurrency work")
-	flags.String("user", "postgres", "postgres user")
-	flags.String("password", "password", "postgres password")
-	flags.String("host", "localhost", "postgres hostname")
-	flags.Uint16("port", 5432, "postgres port")
-	flags.String("database", "homework", "postgres database name")
+	flags.IntP("workers", "w", 3, "Number of workers for concurrency work.")
+	flags.String("user", "postgres", "Postgres user")
+	flags.String("password", "password", "Postgres password")
+	flags.String("host", "localhost", "Postgres hostname")
+	flags.Uint16("port", 5432, "Postgres port")
+	flags.String("database", "homework", "Postgres database name")
+	flags.String("csv-host-hdr", "hostname", "The name of the CSV host id field")
+	flags.String("csv-start-hdr", "start_time", "The name of the CSV start time field")
+	flags.String("csv-end-hdr", "end_time", "The name of the CSV end time field")
+	flags.String("csv-ts-fmt", "2006-01-02 15:04:05", "The go timestamp format of the CSV timestamp field")
 
 	return flags
 }
@@ -149,39 +154,4 @@ func getCmdRun(gs *globalState) *cobra.Command {
 	runCmd.Flags().SortFlags = false
 	runCmd.Flags().AddFlagSet(c.flagSet())
 	return runCmd
-}
-
-type QueryFormatProcess struct {
-	Hostname  string
-	StartTime string
-	EndTime   string
-	Format    string // the format of the timestamp column (for format see documentation of go time.Parse())
-}
-
-func (q *QueryFormatProcess) Run(reader csv.Reader, handler domain.ShardHandler, errCh chan<- error) {
-	errCh <- func() error {
-		defer reader.Close()
-
-		for data := range reader.C() {
-			start, err := time.Parse(q.Format, data.Get(q.StartTime))
-			if err != nil {
-				return err
-			}
-			end, err := time.Parse(q.Format, data.Get(q.EndTime))
-			if err != nil {
-				return err
-			}
-
-			//wg.Add(1)
-			r := domain.Request{
-				HostID:    data.Get(q.Hostname),
-				StartTime: start,
-				EndTime:   end,
-			}
-			if err := handler.Process(r, 0); err != nil {
-				return err
-			}
-		}
-		return reader.Error()
-	}()
 }

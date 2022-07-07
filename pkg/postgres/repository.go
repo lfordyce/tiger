@@ -23,22 +23,27 @@ func GetConfig(flags *pflag.FlagSet) (*DBDetails, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	port, err := flags.GetUint16("port")
 	if err != nil {
 		return nil, err
 	}
+
 	database, err := flags.GetString("database")
 	if err != nil {
 		return nil, err
 	}
+
 	password, err := flags.GetString("password")
 	if err != nil {
 		return nil, err
 	}
+
 	user, err := flags.GetString("user")
 	if err != nil {
 		return nil, err
 	}
+
 	return &DBDetails{
 		Host:     host,
 		Port:     port,
@@ -64,11 +69,13 @@ func (d *DBDetails) OpenConnection(ctx context.Context) (domain.Handler, func(),
 		User:     d.User,
 		Password: d.Password,
 	}
+
 	pool, err := pgxpool.Connect(ctx, ConstructURI(connDetails, "disable"))
 	if err != nil {
 		return Repository{}, func() {}, err
 	}
-	return Repository{Conn: pool}, func() { pool.Close() }, nil
+
+	return Repository{Conn: pool}, pool.Close, nil
 }
 
 func (r Repository) Process(req domain.Request) (float64, error) {
@@ -83,6 +90,7 @@ func (r Repository) Process(req domain.Request) (float64, error) {
 	if err != nil {
 		return elapsed, fmt.Errorf("postgres: failed to query events table: %w", err)
 	}
+
 	return elapsed, nil
 }
 
