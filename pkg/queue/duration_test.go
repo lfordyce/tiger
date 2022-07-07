@@ -52,11 +52,9 @@ func newDelayJob(runs int, quit chan bool) *delayJob {
 }
 
 func expectDuration(t0 time.Time, durMin, durMax time.Duration, t *testing.T) {
-	d0 := time.Now().Sub(t0)
-
-	if d0 < durMin {
+	if time.Since(t0) < durMin {
 		t.Error(errDurationTooShort)
-	} else if d0 > durMax {
+	} else if time.Since(t0) > durMax {
 		t.Error(errDurationTooLong)
 	}
 }

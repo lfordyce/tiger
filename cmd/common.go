@@ -5,7 +5,6 @@ import (
 	"github.com/spf13/cobra"
 	"io"
 	"os"
-	"syscall"
 )
 
 func exactArgsWithMsg(n int, msg string) cobra.PositionalArgs {
@@ -27,35 +26,4 @@ func stdinOrFile(args string, stdin io.ReadCloser) io.ReadCloser {
 		}
 	}
 	return r
-}
-
-// Trap Interrupts, SIGINTs and SIGTERMs and call the given.
-func handleTestAbortSignals(gs *globalState, gracefulStopHandler, onHardStop func(os.Signal)) (stop func()) {
-	sigC := make(chan os.Signal, 2)
-	done := make(chan struct{})
-	gs.signalNotify(sigC, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		select {
-		case sig := <-sigC:
-			gracefulStopHandler(sig)
-		case <-done:
-			return
-		}
-
-		select {
-		case sig := <-sigC:
-			if onHardStop != nil {
-				onHardStop(sig)
-			}
-			gs.osExit(int(105))
-		case <-done:
-			return
-		}
-	}()
-
-	return func() {
-		close(done)
-		gs.signalStop(sigC)
-	}
 }

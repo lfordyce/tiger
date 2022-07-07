@@ -26,16 +26,6 @@ type reader struct {
 	io     <-chan Record
 }
 
-// ReadAll reads all the records from the specified reader and only returns a non-nil error
-// if an error, other than EOF, occurs during the reading process.
-func ReadAll(reader Reader) ([]Record, error) {
-	all := make([]Record, 0, 1)
-	for record := range reader.C() {
-		all = append(all, record)
-	}
-	return all, reader.Error()
-}
-
 // WithIoReader creates a csv Reader from the specified io Reader.
 func WithIoReader(io io.ReadCloser) Reader {
 	csvReader := csv.NewReader(io)

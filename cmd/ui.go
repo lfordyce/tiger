@@ -7,15 +7,6 @@ import (
 	"sync"
 )
 
-const (
-	// Max length of left-side progress bar text before trimming is forced
-	maxLeftLength = 30
-	// Amount of padding in chars between rendered progress
-	// bar text and right-side terminal window edge.
-	termPadding      = 1
-	defaultTermWidth = 80
-)
-
 // A writer that syncs writes with a mutex and, if the output is a TTY, clears before newlines.
 type consoleWriter struct {
 	rawOut *os.File

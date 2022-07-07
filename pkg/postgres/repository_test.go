@@ -7,9 +7,6 @@ import (
 	"time"
 )
 
-// psql -h localhost -U postgres -p 5432 -d homework
-const defaultPostgresURL = "postgres://postgres:password@localhost:5432/homework?sslmode=disable"
-
 func TestConstructURI(t *testing.T) {
 	cases := [...]struct {
 		desc           string

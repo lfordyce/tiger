@@ -91,7 +91,7 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 	elapsed := func() func() time.Duration {
 		start := time.Now()
 		return func() time.Duration {
-			return time.Now().Sub(start)
+			return time.Since(start)
 		}
 	}()
 

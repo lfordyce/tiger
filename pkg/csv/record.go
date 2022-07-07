@@ -47,7 +47,7 @@ func NewRecordBuilder(header []string) RecordBuilder {
 				panic(err)
 			}
 		}
-		tmp := make([]string, len(header), len(header))
+		tmp := make([]string, len(header))
 		copy(tmp, fields)
 		return &record{
 			header: header,

@@ -30,13 +30,10 @@ func TestErrorRetry(t *testing.T) {
 			return errFail
 		},
 		func(err error) bool {
-			if err == errRetry {
-				return true
-			}
-			return false
+			return errors.Is(err, errRetry)
 		},
 		func(err error) {
-			if err == errFail {
+			if errors.Is(err, errFail) {
 				quit <- true
 			}
 		},
