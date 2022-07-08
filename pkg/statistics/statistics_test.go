@@ -1,4 +1,4 @@
-package stats
+package statistics
 
 import (
 	"math/rand"
@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// makeFloatSlice makes a slice of float64s
 func makeFloatSlice(c int) []float64 {
 	lf := make([]float64, 0, c)
 	for i := 0; i < c; i++ {

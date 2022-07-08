@@ -1,7 +1,9 @@
 package queue
 
-import "testing"
-import "errors"
+import (
+	"errors"
+	"testing"
+)
 
 func TestQuitNoJobs(t *testing.T) {
 	q := NewDispatcher(1)

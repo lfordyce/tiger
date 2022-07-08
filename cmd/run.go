@@ -7,7 +7,7 @@ import (
 	"github.com/lfordyce/tiger/pkg/csv"
 	"github.com/lfordyce/tiger/pkg/postgres"
 	"github.com/lfordyce/tiger/pkg/queue"
-	"github.com/lfordyce/tiger/pkg/stats"
+	"github.com/lfordyce/tiger/pkg/statistics"
 	"github.com/lfordyce/tiger/pkg/table"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -26,10 +26,8 @@ const (
 	averageHeader        = "AVG"
 )
 
-type Stream = chan stats.Sample
-
 // StreamWrite provides write-only access to an domain.Sample object.
-type StreamWrite chan<- stats.Sample
+type StreamWrite chan<- statistics.Sample
 
 // cmdRun handles the `tiger run` sub-command
 type cmdRun struct {
@@ -64,7 +62,7 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 
 	processes := new(sync.WaitGroup)
 	errCh := make(chan error, 1)
-	sampleCh := make(chan stats.Sample, 10)
+	sampleCh := make(chan statistics.Sample, 10)
 
 	repo, closeFunc, err := pgconn.OpenConnection(globalCtx)
 	if err != nil {
@@ -109,7 +107,9 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 	}
 
 	var local sync.WaitGroup
-	var samples []stats.Sample
+
+	var samples []statistics.Sample
+
 	local.Add(1)
 	go func() {
 		for sample := range sampleCh {
@@ -127,9 +127,9 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 	c.gs.logger.WithField("total", len(samples)).Info("total results collected")
 	c.gs.logger.WithField("elapsed", finished).Info("execution time of all jobs")
 
-	collection := make(map[string]stats.GroupedSample)
+	collection := make(map[string]statistics.GroupedSample)
 	for _, s := range samples {
-		collection[s.HostnameID] = stats.GroupedSample{
+		collection[s.HostnameID] = statistics.GroupedSample{
 			HostnameID: s.HostnameID,
 			Elapsed:    append(collection[s.HostnameID].Elapsed, s.Elapsed),
 			Overhead:   append(collection[s.HostnameID].Overhead, s.Overhead),
@@ -141,14 +141,14 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 		dStats = append(dStats, dataStats{
 			hostName:  k,
 			totalRun:  len(v.Elapsed),
-			totalTime: stats.Sum(v.Elapsed),
-			minTime:   stats.Min(v.Elapsed),
-			maxTime:   stats.Max(v.Elapsed),
-			median:    stats.Median(v.Elapsed),
-			average:   stats.Mean(v.Elapsed),
+			totalTime: statistics.Sum(v.Elapsed),
+			minTime:   statistics.Min(v.Elapsed),
+			maxTime:   statistics.Max(v.Elapsed),
+			median:    statistics.Median(v.Elapsed),
+			average:   statistics.Mean(v.Elapsed),
 		})
 	}
-	c.gs.logger.Info("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••")
+	//c.gs.logger.Info("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••")
 	c.gs.logger.Info("BENCHMARK STATISTICS BY HOSTNAME")
 	renderState(dStats, c.gs.stdOut)
 
@@ -162,15 +162,15 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 	finalOutput.Data = append(finalOutput.Data, []string{
 		fmt.Sprint(len(samples)),
 		fmt.Sprintf("%s", finished),
-		fmt.Sprintf("%.4fms", stats.Min(final)),
-		fmt.Sprintf("%.4fms", stats.Max(final)),
-		fmt.Sprintf("%.4fms", stats.Median(final)),
-		fmt.Sprintf("%.4fms", stats.Mean(final)),
+		fmt.Sprintf("%.4fms", statistics.Min(final)),
+		fmt.Sprintf("%.4fms", statistics.Max(final)),
+		fmt.Sprintf("%.4fms", statistics.Median(final)),
+		fmt.Sprintf("%.4fms", statistics.Mean(final)),
 	})
-	c.gs.logger.Info("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••")
+	//c.gs.logger.Info("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••")
 	c.gs.logger.Info("TOTAL BENCHMARK STATISTICS")
 	finalOutput.Render(c.gs.stdOut)
-	c.gs.logger.Info("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••")
+	//c.gs.logger.Info("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••")
 	return nil
 }
 

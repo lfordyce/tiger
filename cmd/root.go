@@ -6,7 +6,7 @@ import (
 	"github.com/lfordyce/tiger/internal/domain"
 	"github.com/lfordyce/tiger/pkg/consts"
 	"github.com/lfordyce/tiger/pkg/log"
-	"github.com/lfordyce/tiger/pkg/stats"
+	"github.com/lfordyce/tiger/pkg/statistics"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
@@ -267,7 +267,7 @@ func LogDurationHandler(next domain.Handler, id int, logger *logrus.Logger, writ
 				e.WithError(err).Error()
 			} else {
 				e.Debug("processing statistics")
-				write <- stats.Sample{
+				write <- statistics.Sample{
 					WorkerID:   id,
 					Elapsed:    result,
 					Overhead:   dur,

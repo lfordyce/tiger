@@ -1,4 +1,4 @@
-package stats
+package statistics
 
 import (
 	"golang.org/x/exp/constraints"

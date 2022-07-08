@@ -15,15 +15,15 @@ linters-settings:
     min-occurrences: 2
   gocognit:
     min-complexity: 20
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - experimental
-      - opinionated
-      - performance
-      - style
-    disabled-checks:
-      - dupImport # https://github.com/go-critic/go-critic/issues/845
+#  gocritic:
+#    enabled-tags:
+#      - diagnostic
+#      - experimental
+#      - opinionated
+#      - performance
+#      - style
+#    disabled-checks:
+#      - dupImport # https://github.com/go-critic/go-critic/issues/845
   gocyclo:
     min-complexity: 15
   goimports:
@@ -59,7 +59,7 @@ linters:
     - gochecknoinits
     - gocognit
     - goconst
-    - gocritic
+#    - gocritic
     - gocyclo
     - godot
     - gofumpt
