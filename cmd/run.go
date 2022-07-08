@@ -161,9 +161,44 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 			average:   mean,
 		})
 	}
-	c.gs.logger.Info("Execution statistics by hostname")
+	c.gs.logger.Info("BENCHMARK STATISTICS BY HOSTNAME")
 	renderState(stats, c.gs.stdOut)
 
+	var final []float64
+	for _, v := range samples {
+		final = append(final, v.Elapsed)
+	}
+
+	max, err := domain.Max(final)
+	if err != nil {
+		panic(err)
+	}
+
+	min, err := domain.Min(final)
+	if err != nil {
+		panic(err)
+	}
+
+	median, err := domain.Median(final)
+	if err != nil {
+		panic(err)
+	}
+	mean, err := domain.Mean(final)
+	if err != nil {
+		panic(err)
+	}
+	finalOutput := buildFinalTable()
+	finalOutput.Data = []table.Row{}
+	finalOutput.Data = append(finalOutput.Data, []string{
+		fmt.Sprint(len(samples)),
+		fmt.Sprintf("%s", finished),
+		fmt.Sprintf("%.4fms", min),
+		fmt.Sprintf("%.4fms", max),
+		fmt.Sprintf("%.4fms", median),
+		fmt.Sprintf("%.4fms", mean),
+	})
+	c.gs.logger.Info("TOTAL BENCHMARK STATISTICS")
+	finalOutput.Render(c.gs.stdOut)
 	return nil
 }
 
@@ -241,6 +276,38 @@ func buildTable() table.Table {
 			Flexible:  true,
 			LeftAlign: true,
 		},
+		{
+			Header: "TOTAL_RUN",
+			Width:  9,
+		},
+		{
+			Header: "TOTAL_TIME",
+			Width:  11,
+		},
+		{
+			Header: "MIN",
+			Width:  11,
+		},
+		{
+			Header: "MAX",
+			Width:  11,
+		},
+		{
+			Header: "MEDIAN",
+			Width:  11,
+		},
+		{
+			Header: "AVG",
+			Width:  11,
+		},
+	}
+	t := table.NewTable(columns, []table.Row{})
+	t.Sort = []int{0}
+	return t
+}
+
+func buildFinalTable() table.Table {
+	columns := []table.Column{
 		{
 			Header: "TOTAL_RUN",
 			Width:  9,
