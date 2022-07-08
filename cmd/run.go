@@ -7,22 +7,18 @@ import (
 	"github.com/lfordyce/tiger/pkg/csv"
 	"github.com/lfordyce/tiger/pkg/postgres"
 	"github.com/lfordyce/tiger/pkg/queue"
+	"github.com/lfordyce/tiger/pkg/table"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"io"
 	"sync"
 	"time"
 )
 
-type ResultStats struct {
-	worker     int
-	elapsed    float64
-	overhead   time.Duration
-	hostnameID string
-	startEnd   time.Time
-	endTime    time.Time
-}
+type Stream = chan domain.Sample
 
-type StreamWrite chan<- ResultStats
+// StreamWrite provides write-only access to an domain.Sample object.
+type StreamWrite chan<- domain.Sample
 
 // cmdRun handles the `tiger run` sub-command
 type cmdRun struct {
@@ -57,7 +53,7 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 
 	processes := new(sync.WaitGroup)
 	errCh := make(chan error, 1)
-	resultCh := make(chan ResultStats, 10)
+	sampleCh := make(chan domain.Sample, 10)
 
 	repo, closeFunc, err := pgconn.OpenConnection(globalCtx)
 	if err != nil {
@@ -81,7 +77,7 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 		TaskHandler: domain.TaskHandlerFunc(func(request domain.Request, u int) error {
 			// decrements the WaitGroup when job is finished executing
 			defer processes.Done()
-			if _, err := LogDurationHandler(repo, u, c.gs.logger, resultCh).Process(request); err != nil {
+			if _, err := LogDurationHandler(repo, u, c.gs.logger, sampleCh).Process(request); err != nil {
 				return err
 			}
 			return nil
@@ -102,11 +98,11 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 	}
 
 	var local sync.WaitGroup
-	var events []ResultStats
+	var samples []domain.Sample
 	local.Add(1)
 	go func() {
-		for event := range resultCh {
-			events = append(events, event)
+		for sample := range sampleCh {
+			samples = append(samples, sample)
 		}
 		local.Done()
 	}()
@@ -114,11 +110,60 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 	// signals that all events have been executed by the worker pool
 	finished := elapsed()
 
-	close(resultCh)
+	close(sampleCh)
 	local.Wait()
 
-	c.gs.logger.WithField("total", len(events)).Info("total results collected")
+	c.gs.logger.WithField("total", len(samples)).Info("total results collected")
 	c.gs.logger.WithField("elapsed", finished).Info("execution time of all jobs")
+
+	collection := make(map[string]domain.SampleByHostname)
+	for _, s := range samples {
+		collection[s.HostnameID] = domain.SampleByHostname{
+			HostnameID: s.HostnameID,
+			Elapsed:    append(collection[s.HostnameID].Elapsed, s.Elapsed),
+			Overhead:   append(collection[s.HostnameID].Overhead, s.Overhead),
+		}
+	}
+
+	var stats []dataStats
+	for k, v := range collection {
+		total := len(v.Elapsed)
+
+		max, err := domain.Max(v.Elapsed)
+		if err != nil {
+			panic(err)
+		}
+
+		min, err := domain.Min(v.Elapsed)
+		if err != nil {
+			panic(err)
+		}
+
+		median, err := domain.Median(v.Elapsed)
+		if err != nil {
+			panic(err)
+		}
+		mean, err := domain.Mean(v.Elapsed)
+		if err != nil {
+			panic(err)
+		}
+		sum, err := domain.Sum(v.Elapsed)
+		if err != nil {
+			panic(err)
+		}
+		stats = append(stats, dataStats{
+			hostName:  k,
+			totalRun:  total,
+			totalTime: sum,
+			minTime:   min,
+			maxTime:   max,
+			median:    median,
+			average:   mean,
+		})
+	}
+	c.gs.logger.Info("Execution statistics by hostname")
+	renderState(stats, c.gs.stdOut)
+
 	return nil
 }
 
@@ -154,4 +199,74 @@ func getCmdRun(gs *globalState) *cobra.Command {
 	runCmd.Flags().SortFlags = false
 	runCmd.Flags().AddFlagSet(c.flagSet())
 	return runCmd
+}
+
+type dataStats struct {
+	hostName  string
+	totalRun  int
+	totalTime float64
+	minTime   float64
+	maxTime   float64
+	median    float64
+	average   float64
+}
+
+func renderState(statuses []dataStats, w io.Writer) {
+	t := buildTable()
+	t.Data = []table.Row{}
+	for _, status := range statuses {
+		status := status
+		t.Data = append(t.Data, statsToTableRow(status))
+	}
+	t.Render(w)
+}
+
+func statsToTableRow(status dataStats) []string {
+	return []string{
+		status.hostName,
+		fmt.Sprint(status.totalRun),
+		fmt.Sprintf("%.4fms", status.totalTime),
+		fmt.Sprintf("%.4fms", status.minTime),
+		fmt.Sprintf("%.4fms", status.maxTime),
+		fmt.Sprintf("%.4fms", status.median),
+		fmt.Sprintf("%.4fms", status.average),
+	}
+}
+
+func buildTable() table.Table {
+	columns := []table.Column{
+		{
+			Header:    "HOSTNAME",
+			Width:     7,
+			Flexible:  true,
+			LeftAlign: true,
+		},
+		{
+			Header: "TOTAL_RUN",
+			Width:  9,
+		},
+		{
+			Header: "TOTAL_TIME",
+			Width:  11,
+		},
+		{
+			Header: "MIN",
+			Width:  11,
+		},
+		{
+			Header: "MAX",
+			Width:  11,
+		},
+		{
+			Header: "MEDIAN",
+			Width:  11,
+		},
+		{
+			Header: "AVG",
+			Width:  11,
+		},
+	}
+	t := table.NewTable(columns, []table.Row{})
+	t.Sort = []int{0}
+	return t
 }

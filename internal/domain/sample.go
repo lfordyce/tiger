@@ -6,6 +6,51 @@ import (
 	"time"
 )
 
+// Ordered permits any ordered type: any type that supports
+// the operations <, <=, >=, >, as well as == and !=.
+type Ordered interface {
+	int | int8 | int16 | int32 | int64 |
+		uint | uint8 | uint16 | uint32 | uint64 | uintptr |
+		float32 | float64 |
+		string
+}
+
+type orderedSlice[Elem Ordered] []Elem
+
+func (s orderedSlice[Elem]) Len() int { return len(s) }
+func (s orderedSlice[Elem]) Less(i, j int) bool {
+	if s[i] < s[j] {
+		return true
+	}
+	isNaN := func(f Elem) bool { return f != f }
+	if isNaN(s[i]) && !isNaN(s[j]) {
+		return true
+	}
+	return false
+}
+func (s orderedSlice[Elem]) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+
+// OrderedSlice sorts a slice of any ordered type in ascending order.
+func OrderedSlice[Elem Ordered](s []Elem) {
+	sort.Sort(orderedSlice[Elem](s))
+}
+
+// sliceFn implements sort.Interface for a slice of any type with an
+// explicit less-than function.
+type sliceFn[Elem any] struct {
+	s    []Elem
+	less func(Elem, Elem) bool
+}
+
+func (s sliceFn[Elem]) Len() int           { return len(s.s) }
+func (s sliceFn[Elem]) Less(i, j int) bool { return s.less(s.s[i], s.s[j]) }
+func (s sliceFn[Elem]) Swap(i, j int)      { s.s[i], s.s[j] = s.s[j], s.s[i] }
+
+// SliceFn sorts a slice of any type according to a less-than function.
+func SliceFn[Elem any](s []Elem, less func(Elem, Elem) bool) {
+	sort.Sort(sliceFn[Elem]{s, less})
+}
+
 type statsError struct {
 	err string
 }
@@ -29,14 +74,14 @@ type Sample struct {
 	Elapsed    float64
 	Overhead   time.Duration
 	HostnameID string
-	StartEnd   time.Time
+	StartTime  time.Time
 	EndTime    time.Time
 }
 
 type SampleByHostname struct {
 	HostnameID string
 	Elapsed    []float64
-	Overhead   []float64
+	Overhead   []time.Duration
 }
 
 // Float64Data is a named type for []float64 with helper methods
@@ -168,4 +213,12 @@ func sortedCopy(input Float64Data) (copy Float64Data) {
 	copy = copyslice(input)
 	sort.Float64s(copy)
 	return
+}
+
+func zip[K comparable, V any](a []K, b []V) map[K]V {
+	c := make(map[K]V)
+	for i := 0; i < len(a); i++ {
+		c[a[i]] = b[i]
+	}
+	return c
 }

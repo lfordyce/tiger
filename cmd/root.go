@@ -249,13 +249,13 @@ func LogDurationHandler(next domain.Handler, id int, logger *logrus.Logger, writ
 				e.WithError(err).Error()
 			} else {
 				e.Debug("processing statistics")
-				write <- ResultStats{
-					worker:     id,
-					elapsed:    result,
-					overhead:   dur,
-					hostnameID: r.HostID,
-					startEnd:   r.StartTime,
-					endTime:    r.EndTime,
+				write <- domain.Sample{
+					WorkerID:   id,
+					Elapsed:    result,
+					Overhead:   dur,
+					HostnameID: r.HostID,
+					StartTime:  r.StartTime,
+					EndTime:    r.EndTime,
 				}
 			}
 		}(time.Now())

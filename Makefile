@@ -16,3 +16,7 @@ run-linter:
 .PHONY: lint
 lint :
 	golangci-lint run --out-format=tab --new-from-rev main ./...
+
+.PHONY: container
+container:
+	docker build --rm --pull --no-cache -t lfordyce/tiger .

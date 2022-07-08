@@ -18,3 +18,21 @@ go run . < query_params.csv
 ```shell
 go run . query_params.csv
 ```
+
+* Run docker:
+```shell
+docker run --rm -i lfordyce/tiger run -h
+```
+
+* connect to running postgresql
+```shell
+docker run --rm -i lfordyce/tiger run - <query_params.csv -w 5 --host docker.for.mac.host.internal
+```
+* alternatively
+```shell
+docker run --rm -i --network=host lfordyce/tiger run - <query_params.csv -w 5 --host 0.0.0.0
+```
+* or
+```shell
+docker run --rm -i --network=host lfordyce/tiger run - <query_params.csv -w 5 --host 127.0.0.1
+```
