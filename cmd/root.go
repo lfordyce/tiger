@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"github.com/lfordyce/tiger/internal/domain"
+	"github.com/lfordyce/tiger/pkg/consts"
+	"github.com/lfordyce/tiger/pkg/log"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"io"
@@ -15,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -30,7 +34,9 @@ type globalFlags struct {
 type globalState struct {
 	ctx context.Context
 
-	args []string
+	fs    afero.Fs
+	getwd func() (string, error)
+	args  []string
 
 	defaultFlags, flags globalFlags
 
@@ -68,6 +74,8 @@ func newGlobalState(ctx context.Context) *globalState {
 
 	return &globalState{
 		ctx:          ctx,
+		fs:           afero.NewOsFs(),
+		getwd:        os.Getwd,
 		args:         append(make([]string, 0, len(os.Args)), os.Args...),
 		defaultFlags: defaultFlags,
 		flags:        defaultFlags,
@@ -121,7 +129,7 @@ func newRootCommand(gs *globalState) *rootCommand {
 	rootCmd.SetIn(gs.stdIn)
 
 	subCommands := []func(*globalState) *cobra.Command{
-		getCmdRun,
+		getCmdRun, getCmdVersion,
 	}
 
 	for _, sc := range subCommands {
@@ -142,7 +150,7 @@ func (c *rootCommand) persistentPreRunE(*cobra.Command, []string) error {
 	<-c.loggerStopped
 
 	stdlog.SetOutput(c.globalState.logger.Writer())
-	c.globalState.logger.Debugf("tiger version: v%s", "0.1.0")
+	c.globalState.logger.Debugf("tiger version: v%s", consts.FullVersion())
 	return nil
 }
 
@@ -213,6 +221,20 @@ func (c *rootCommand) setupLoggers() (<-chan struct{}, error) {
 		c.globalState.logger.SetOutput(c.globalState.stdOut)
 	case line == "none":
 		c.globalState.logger.SetOutput(ioutil.Discard)
+
+	case strings.HasPrefix(line, "file"):
+		ch = make(chan struct{})
+		hook, err := log.FileHookFromConfigLine(
+			c.globalState.ctx, c.globalState.fs, c.globalState.getwd,
+			c.globalState.fallbackLogger, line, ch,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		c.globalState.logger.AddHook(hook)
+		c.globalState.logger.SetOutput(ioutil.Discard)
+
 	default:
 		return nil, fmt.Errorf("unsupported log output '%s'", line)
 	}

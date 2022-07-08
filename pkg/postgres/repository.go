@@ -10,8 +10,10 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/lfordyce/tiger/internal/domain"
 	"github.com/spf13/pflag"
+	"math"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 type Repository struct {
@@ -63,16 +65,23 @@ type DBDetails struct {
 
 func (d *DBDetails) OpenConnection(ctx context.Context) (domain.Handler, func(), error) {
 	connDetails := pgconn.Config{
-		Host:     d.Host,
-		Port:     d.Port,
-		Database: d.DBName,
-		User:     d.User,
-		Password: d.Password,
+		Host:           d.Host,
+		Port:           d.Port,
+		Database:       d.DBName,
+		User:           d.User,
+		Password:       d.Password,
+		ConnectTimeout: time.Second * time.Duration(5),
 	}
 
-	pool, err := pgxpool.Connect(ctx, ConstructURI(connDetails, "disable"))
+	dsn := ConstructURI(connDetails, "disable")
+
+	pool, err := pgxpool.Connect(ctx, dsn)
 	if err != nil {
-		return Repository{}, func() {}, err
+		return Repository{}, func() {}, fmt.Errorf("postgres.OpenConnection: failed to establish postgres connection %w", err)
+	}
+
+	if err := MigrationManager(dsn, MigrationUp); err != nil {
+		return nil, nil, fmt.Errorf("postgres.OpenConnection: failed to run db migrations %w", err)
 	}
 
 	return Repository{Conn: pool}, pool.Close, nil
@@ -80,17 +89,13 @@ func (d *DBDetails) OpenConnection(ctx context.Context) (domain.Handler, func(),
 
 func (r Repository) Process(req domain.Request) (float64, error) {
 	var elapsed float64
-	row := r.Conn.QueryRow(context.Background(), "SELECT * FROM bench($1::TEXT, $2::TIMESTAMPTZ, $3::TIMESTAMPTZ)",
-		req.HostID, req.StartTime, req.EndTime)
-
-	err := row.Scan(&elapsed)
+	err := r.Conn.QueryRow(context.Background(), "SELECT * FROM bench($1::TEXT, $2::TIMESTAMPTZ, $3::TIMESTAMPTZ)", req.HostID, req.StartTime, req.EndTime).Scan(&elapsed)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return elapsed, fmt.Errorf("postgres: elapsed data not found")
+		return math.NaN(), fmt.Errorf("postgres.Process: elapsed data not found")
 	}
 	if err != nil {
-		return elapsed, fmt.Errorf("postgres: failed to query events table: %w", err)
+		return math.NaN(), fmt.Errorf("postgres.Process: failed to query events table %w", err)
 	}
-
 	return elapsed, nil
 }
 

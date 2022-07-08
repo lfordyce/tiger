@@ -3,6 +3,7 @@ run:
   # Avoid false positives on configuration files.
   skip-dirs:
     - resources
+    - migrations
 
 linters-settings:
   dupl:

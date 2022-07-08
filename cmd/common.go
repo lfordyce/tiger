@@ -27,3 +27,9 @@ func stdinOrFile(args string, stdin io.ReadCloser) io.ReadCloser {
 	}
 	return r
 }
+
+func printToStdout(gs *globalState, s string) {
+	if _, err := fmt.Fprint(gs.stdOut, s); err != nil {
+		gs.logger.Errorf("could not print '%s' to stdout: %s", s, err.Error())
+	}
+}

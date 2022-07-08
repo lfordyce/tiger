@@ -1,11 +1,59 @@
 package postgres
 
 import (
+	"context"
 	"github.com/jackc/pgconn"
+	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/lfordyce/tiger/internal/domain"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"math"
 	"net/url"
 	"testing"
 	"time"
 )
+
+func TestRunMigrations(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+	}
+
+	connDetails := pgconn.Config{
+		Host:           "localhost",
+		Port:           5432,
+		Database:       "homework",
+		User:           "postgres",
+		Password:       "password",
+		ConnectTimeout: time.Second * time.Duration(5),
+	}
+	dsn := ConstructURI(connDetails, "disable")
+
+	require.NoError(t, MigrationManager(dsn, MigrationUp))
+
+	ctx := context.Background()
+	pool, err := pgxpool.Connect(ctx, dsn)
+	require.NoError(t, err)
+
+	r := Repository{Conn: pool}
+	t.Run("it can execute the newly migrated batch function", func(t *testing.T) {
+
+		start, err := time.Parse("2006-01-02 15:04:05", "2017-01-02 13:02:02")
+		assert.NoError(t, err)
+
+		end, err := time.Parse("2006-01-02 15:04:05", "2017-01-02 14:02:02")
+		assert.NoError(t, err)
+
+		elapsed, err := r.Process(domain.Request{
+			HostID:    "host_000001",
+			StartTime: start,
+			EndTime:   end,
+		})
+		assert.NoError(t, err)
+		assert.True(t, elapsed != math.NaN())
+	})
+	r.Conn.Close()
+	require.NoError(t, MigrationManager(dsn, MigrationDown))
+}
 
 func TestConstructURI(t *testing.T) {
 	cases := [...]struct {
