@@ -6,6 +6,7 @@ import (
 	"github.com/lfordyce/tiger/internal/domain"
 	"github.com/lfordyce/tiger/pkg/consts"
 	"github.com/lfordyce/tiger/pkg/log"
+	"github.com/lfordyce/tiger/pkg/stats"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
@@ -32,24 +33,19 @@ type globalFlags struct {
 }
 
 type globalState struct {
-	ctx context.Context
-
-	fs    afero.Fs
-	getwd func() (string, error)
-	args  []string
-
+	ctx                 context.Context
+	fs                  afero.Fs
+	getwd               func() (string, error)
+	args                []string
 	defaultFlags, flags globalFlags
-
-	outMutex       *sync.Mutex
-	stdOut, stdErr *consoleWriter
-	stdIn          io.ReadCloser
-
-	osExit       func(int)
-	signalNotify func(chan<- os.Signal, ...os.Signal)
-	signalStop   func(chan<- os.Signal)
-
-	logger         *logrus.Logger
-	fallbackLogger logrus.FieldLogger
+	outMutex            *sync.Mutex
+	stdOut, stdErr      *consoleWriter
+	stdIn               io.ReadCloser
+	osExit              func(int)
+	signalNotify        func(chan<- os.Signal, ...os.Signal)
+	signalStop          func(chan<- os.Signal)
+	logger              *logrus.Logger
+	fallbackLogger      logrus.FieldLogger
 }
 
 func newGlobalState(ctx context.Context) *globalState {
@@ -271,7 +267,7 @@ func LogDurationHandler(next domain.Handler, id int, logger *logrus.Logger, writ
 				e.WithError(err).Error()
 			} else {
 				e.Debug("processing statistics")
-				write <- domain.Sample{
+				write <- stats.Sample{
 					WorkerID:   id,
 					Elapsed:    result,
 					Overhead:   dur,

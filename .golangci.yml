@@ -1,9 +1,9 @@
 # v1.46.2
 run:
+  go: '1.18'
   # Avoid false positives on configuration files.
   skip-dirs:
     - resources
-    - migrations
 
 linters-settings:
   dupl:
@@ -98,3 +98,18 @@ linters:
     # - structcheck
     # - unparam
     # - wastedassign
+
+issues:
+  exclude-use-default: false
+
+  # Excluding configuration per-path, per-linter, per-text and per-source
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gomnd
+        - funlen
+
+    # https://github.com/go-critic/go-critic/issues/926
+    - linters:
+        - gocritic
+      text: "unnecessaryDefer:"

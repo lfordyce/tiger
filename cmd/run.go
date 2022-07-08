@@ -7,6 +7,7 @@ import (
 	"github.com/lfordyce/tiger/pkg/csv"
 	"github.com/lfordyce/tiger/pkg/postgres"
 	"github.com/lfordyce/tiger/pkg/queue"
+	"github.com/lfordyce/tiger/pkg/stats"
 	"github.com/lfordyce/tiger/pkg/table"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -15,10 +16,20 @@ import (
 	"time"
 )
 
-type Stream = chan domain.Sample
+const (
+	hostnameHeader       = "HOSTNAME"
+	totalCountNameHeader = "TOTAL_RUN"
+	totalTimeNameHeader  = "TOTAL_TIME"
+	minHeader            = "MIN"
+	maxHeader            = "MAX"
+	medianHeader         = "MEDIAN"
+	averageHeader        = "AVG"
+)
+
+type Stream = chan stats.Sample
 
 // StreamWrite provides write-only access to an domain.Sample object.
-type StreamWrite chan<- domain.Sample
+type StreamWrite chan<- stats.Sample
 
 // cmdRun handles the `tiger run` sub-command
 type cmdRun struct {
@@ -53,7 +64,7 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 
 	processes := new(sync.WaitGroup)
 	errCh := make(chan error, 1)
-	sampleCh := make(chan domain.Sample, 10)
+	sampleCh := make(chan stats.Sample, 10)
 
 	repo, closeFunc, err := pgconn.OpenConnection(globalCtx)
 	if err != nil {
@@ -98,7 +109,7 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 	}
 
 	var local sync.WaitGroup
-	var samples []domain.Sample
+	var samples []stats.Sample
 	local.Add(1)
 	go func() {
 		for sample := range sampleCh {
@@ -116,89 +127,50 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 	c.gs.logger.WithField("total", len(samples)).Info("total results collected")
 	c.gs.logger.WithField("elapsed", finished).Info("execution time of all jobs")
 
-	collection := make(map[string]domain.SampleByHostname)
+	collection := make(map[string]stats.GroupedSample)
 	for _, s := range samples {
-		collection[s.HostnameID] = domain.SampleByHostname{
+		collection[s.HostnameID] = stats.GroupedSample{
 			HostnameID: s.HostnameID,
 			Elapsed:    append(collection[s.HostnameID].Elapsed, s.Elapsed),
 			Overhead:   append(collection[s.HostnameID].Overhead, s.Overhead),
 		}
 	}
 
-	var stats []dataStats
+	var dStats []dataStats
 	for k, v := range collection {
-		total := len(v.Elapsed)
-
-		max, err := domain.Max(v.Elapsed)
-		if err != nil {
-			panic(err)
-		}
-
-		min, err := domain.Min(v.Elapsed)
-		if err != nil {
-			panic(err)
-		}
-
-		median, err := domain.Median(v.Elapsed)
-		if err != nil {
-			panic(err)
-		}
-		mean, err := domain.Mean(v.Elapsed)
-		if err != nil {
-			panic(err)
-		}
-		sum, err := domain.Sum(v.Elapsed)
-		if err != nil {
-			panic(err)
-		}
-		stats = append(stats, dataStats{
+		dStats = append(dStats, dataStats{
 			hostName:  k,
-			totalRun:  total,
-			totalTime: sum,
-			minTime:   min,
-			maxTime:   max,
-			median:    median,
-			average:   mean,
+			totalRun:  len(v.Elapsed),
+			totalTime: stats.Sum(v.Elapsed),
+			minTime:   stats.Min(v.Elapsed),
+			maxTime:   stats.Max(v.Elapsed),
+			median:    stats.Median(v.Elapsed),
+			average:   stats.Mean(v.Elapsed),
 		})
 	}
+	c.gs.logger.Info("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••")
 	c.gs.logger.Info("BENCHMARK STATISTICS BY HOSTNAME")
-	renderState(stats, c.gs.stdOut)
+	renderState(dStats, c.gs.stdOut)
 
 	var final []float64
 	for _, v := range samples {
 		final = append(final, v.Elapsed)
 	}
 
-	max, err := domain.Max(final)
-	if err != nil {
-		panic(err)
-	}
-
-	min, err := domain.Min(final)
-	if err != nil {
-		panic(err)
-	}
-
-	median, err := domain.Median(final)
-	if err != nil {
-		panic(err)
-	}
-	mean, err := domain.Mean(final)
-	if err != nil {
-		panic(err)
-	}
 	finalOutput := buildFinalTable()
 	finalOutput.Data = []table.Row{}
 	finalOutput.Data = append(finalOutput.Data, []string{
 		fmt.Sprint(len(samples)),
 		fmt.Sprintf("%s", finished),
-		fmt.Sprintf("%.4fms", min),
-		fmt.Sprintf("%.4fms", max),
-		fmt.Sprintf("%.4fms", median),
-		fmt.Sprintf("%.4fms", mean),
+		fmt.Sprintf("%.4fms", stats.Min(final)),
+		fmt.Sprintf("%.4fms", stats.Max(final)),
+		fmt.Sprintf("%.4fms", stats.Median(final)),
+		fmt.Sprintf("%.4fms", stats.Mean(final)),
 	})
+	c.gs.logger.Info("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••")
 	c.gs.logger.Info("TOTAL BENCHMARK STATISTICS")
 	finalOutput.Render(c.gs.stdOut)
+	c.gs.logger.Info("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••")
 	return nil
 }
 
@@ -271,33 +243,33 @@ func statsToTableRow(status dataStats) []string {
 func buildTable() table.Table {
 	columns := []table.Column{
 		{
-			Header:    "HOSTNAME",
+			Header:    hostnameHeader,
 			Width:     7,
 			Flexible:  true,
 			LeftAlign: true,
 		},
 		{
-			Header: "TOTAL_RUN",
+			Header: totalCountNameHeader,
 			Width:  9,
 		},
 		{
-			Header: "TOTAL_TIME",
+			Header: totalTimeNameHeader,
 			Width:  11,
 		},
 		{
-			Header: "MIN",
+			Header: minHeader,
 			Width:  11,
 		},
 		{
-			Header: "MAX",
+			Header: maxHeader,
 			Width:  11,
 		},
 		{
-			Header: "MEDIAN",
+			Header: medianHeader,
 			Width:  11,
 		},
 		{
-			Header: "AVG",
+			Header: averageHeader,
 			Width:  11,
 		},
 	}
@@ -309,27 +281,27 @@ func buildTable() table.Table {
 func buildFinalTable() table.Table {
 	columns := []table.Column{
 		{
-			Header: "TOTAL_RUN",
+			Header: totalCountNameHeader,
 			Width:  9,
 		},
 		{
-			Header: "TOTAL_TIME",
+			Header: totalTimeNameHeader,
 			Width:  11,
 		},
 		{
-			Header: "MIN",
+			Header: minHeader,
 			Width:  11,
 		},
 		{
-			Header: "MAX",
+			Header: maxHeader,
 			Width:  11,
 		},
 		{
-			Header: "MEDIAN",
+			Header: medianHeader,
 			Width:  11,
 		},
 		{
-			Header: "AVG",
+			Header: averageHeader,
 			Width:  11,
 		},
 	}
