@@ -36,3 +36,7 @@ docker run --rm -i --network=host lfordyce/tiger run - <query_params.csv -w 5 --
 ```shell
 docker run --rm -i --network=host lfordyce/tiger run - <query_params.csv -w 5 --host 127.0.0.1
 ```
+* Docker Desktop 18.03+ for Windows and Mac supports `host.docker.internal` as a functioning alias for localhost. Use this string inside your containers to access your host machine.
+```shell
+docker run --rm -i lfordyce/tiger run - <query_params.csv -w 5 --host host.docker.internal
+```
