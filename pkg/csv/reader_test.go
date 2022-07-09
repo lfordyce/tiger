@@ -105,3 +105,50 @@ host_000008;2017-01-02 18:50:28;2017-01-02 19:50:28
 		t.Logf("%+v\n", p)
 	}
 }
+
+func TestWithCsvReaderBadData(t *testing.T) {
+	csvInput := []byte(`
+hostname,start_time,end_time
+host_000008,2017-0001-01 08:59:22,2017-01-01 09:159:a22
+host_000001,2017-01-02 13:02:02,2017-01-02 14:02:02
+host_000008,,2017-01-02 19:50:28
+`,
+	)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(csvInput); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	stdin := os.Stdin
+	// Restore stdin right after the test.
+	defer func() { os.Stdin = stdin }()
+	os.Stdin = r
+
+	reader := WithIoReader(os.Stdin)
+	fmt.Println(reader.Header())
+	for data := range reader.C() {
+
+		start, err := time.Parse("2006-01-02 15:04:05", data.Get("start_time"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		end, err := time.Parse("2006-01-02 15:04:05", data.Get("end_time"))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		p := parsedData{
+			hostname:  data.Get("hostname"),
+			startTime: start,
+			endTime:   end,
+		}
+		t.Logf("%+v\n", p)
+	}
+}
