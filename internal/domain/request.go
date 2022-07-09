@@ -1,9 +1,11 @@
 package domain
 
 import (
+	"errors"
 	//nolint
 	//+gci:gocritic
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"time"
 
 	"github.com/lfordyce/tiger/pkg/csv"
@@ -52,22 +54,32 @@ type QueryFormatProcess struct {
 	Format    string // the format of the timestamp column (for format see documentation of go time.Parse())
 }
 
-func (q *QueryFormatProcess) Run(reader csv.Reader, handler TaskHandler, errCh chan<- error) {
+func (q *QueryFormatProcess) Run(reader csv.Reader, handler TaskHandler, logger *logrus.Logger, errCh chan<- error) {
 	errCh <- func() error {
 		defer reader.Close()
 
 		for data := range reader.C() {
+
 			start, err := time.Parse(q.Format, data.Get(q.StartTime))
 			if err != nil {
-				return fmt.Errorf("failed to parse start time: %w", err)
+				logger.WithError(fmt.Errorf("failed to parse start time: %w", err)).Error()
+				continue
 			}
 			end, err := time.Parse(q.Format, data.Get(q.EndTime))
 			if err != nil {
-				return fmt.Errorf("failed to parse end time: %w", err)
+				logger.WithError(fmt.Errorf("failed to parse end time: %w", err)).Error()
+				continue
+			}
+
+			hostId := data.Get(q.Hostname)
+			if len(hostId) == 0 {
+				logger.WithError(errors.New("invalid hostname: empty value or unexpected header field")).
+					Error()
+				continue
 			}
 
 			r := Request{
-				HostID:    data.Get(q.Hostname),
+				HostID:    hostId,
 				StartTime: start,
 				EndTime:   end,
 			}

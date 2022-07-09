@@ -1,4 +1,5 @@
 # TIGER
+TimescaleDB Benchmarking Analysis Tool
 
 Menu
 ----
@@ -15,13 +16,13 @@ Setup
 
 ### Docker
 
-Startup TimescaleDB with initial schema and dataset in docker
+Startup TimescaleDB with initial schema and dataset in docker.
 
 ```shell
 make timescaledb
 ```
 
-Build the runtime docker image
+Build the runtime docker image.
 
 ```shell
 make container
@@ -49,7 +50,7 @@ localhost. Use this string inside your containers to access your host machine.
 docker run --rm -i lfordyce/tiger run - <query_params.csv --host host.docker.internal
 ```
 
-Additional use the `-w` flag to specify the number of concurrent workers
+Additionally, use the `-w` flag to specify the number of concurrent workers.
 
 ```shell
 docker run --rm -i lfordyce/tiger run - <query_params.csv -w 5 --host host.docker.internal
@@ -96,6 +97,18 @@ Configuration
 |`log output`                   |  |--log-output        |`stderr`        |change the output for tiger logs, possible values are stderr,stdout,none,file[=./path.fileformat] (default "stderr")|
 |`colored ouput`                |  |--no-color          |                |disable colored output|
 |`verbose`                      |-v|--verbose           |                |enable verbose logging|
+
+- Example usage of flag usage when provided with CSV header data different from defaults:
+```shell
+Hostname,start_time,end_time
+host_000008,2017-01-01 08:59:22,2017-01-01 09:59:22
+host_000001,2017-01-02 13:02:02,2017-01-02 14:02:02
+...
+```
+- Run using the `--csv-host-hdr` flag:
+```shell
+docker run --rm -i --network=host lfordyce/tiger run - <bad_query_params.csv --csv-host-hdr Hostname
+```
 
 Overview
 --------

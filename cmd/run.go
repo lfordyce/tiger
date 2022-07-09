@@ -100,9 +100,10 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	fmtProcess.Run(csv.WithIoReader(file), jq, errCh)
+	fmtProcess.Run(csv.WithIoReader(file), jq, c.gs.logger, errCh)
 	err = <-errCh
 	if err != nil {
+		c.gs.logger.WithError(err).Error("csv processing failed")
 		return err
 	}
 

@@ -2,11 +2,16 @@ package domain
 
 import (
 	"github.com/lfordyce/tiger/pkg/csv"
+	"github.com/sirupsen/logrus/hooks/test"
+	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
 )
 
 func TestQueryFormatProcess_Run(t *testing.T) {
+	nullLogger, _ := test.NewNullLogger()
+
+	//test
 	csvInput := []byte(`
 hostname,start_time,end_time
 host_000008,2017-0001-01 08:59:22,2017-01-01 09:159:a22
@@ -42,11 +47,10 @@ host_000008,,2017-01-02 19:50:28
 	q.Run(csv.WithIoReader(os.Stdin), TaskHandlerFunc(func(request Request, i int) error {
 		collect = append(collect, request)
 		return nil
-	}), errCh)
+	}), nullLogger, errCh)
 	err = <-errCh
 	if err != nil {
 		t.Logf("found and error: %v", err)
 	}
-	t.Logf("done: %v", collect)
-
+	assert.Equal(t, len(collect), 1)
 }

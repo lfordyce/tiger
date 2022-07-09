@@ -8,5 +8,4 @@ CREATE TABLE cpu_usage(
 );
 SELECT create_hypertable('cpu_usage', 'ts');
 
--- "\COPY cpu_usage FROM cpu_usage.csv CSV HEADER"
 COPY cpu_usage FROM '/data/cpu_usage.csv' DELIMITER ',' CSV HEADER;
