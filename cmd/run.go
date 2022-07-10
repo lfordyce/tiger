@@ -149,9 +149,10 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 			average:   statistics.Mean(v.Elapsed),
 		})
 	}
-	//c.gs.logger.Info("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••")
-	c.gs.logger.Info("BENCHMARK STATISTICS BY HOSTNAME")
+	c.gs.logger.Info("BENCHMARK STATISTICS")
+	fmt.Fprint(c.gs.stdOut, "BENCHMARK STATISTICS BY HOSTNAME:\n")
 	renderState(dStats, c.gs.stdOut)
+	fmt.Fprint(c.gs.stdOut, "\n\n")
 
 	var final []float64
 	for _, v := range samples {
@@ -168,10 +169,8 @@ func (c *cmdRun) run(cmd *cobra.Command, args []string) error {
 		fmt.Sprintf("%.4fms", statistics.Median(final)),
 		fmt.Sprintf("%.4fms", statistics.Mean(final)),
 	})
-	//c.gs.logger.Info("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••")
-	c.gs.logger.Info("TOTAL BENCHMARK STATISTICS")
+	fmt.Fprint(c.gs.stdOut, "TOTAL BENCHMARK STATISTICS:\n")
 	finalOutput.Render(c.gs.stdOut)
-	//c.gs.logger.Info("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••")
 	return nil
 }
 
